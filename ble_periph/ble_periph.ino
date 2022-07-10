@@ -12,7 +12,7 @@
 // https://www.bluetooth.com/specifications/assigned-numbers/
 BLEService alert_service = BLEService(UUID16_SVC_IMMEDIATE_ALERT);
 
-uint8_t loop_count=0;
+uint8_t first_conn = 0;
 
 //BLEUart bleuart; // uart over ble
 // TODO: examine BLEAdafruitSensor.h, refer to BLEAdafruitButton
@@ -40,24 +40,22 @@ void setup()
   Bluefruit.Periph.setConnInterval(9, 16); // min = 9*1.25=11.25 ms, max = 16*1.25=20ms
   Bluefruit.setTxPower(4);    // Check bluefruit.h for supported values
 
-#if 0
-  // Configure and Start Device Information Service
-  bledis.setManufacturer("Z Industries");
-  bledis.setModel("crazy_mofo");
-  bledis.begin();
-#endif
-
   // must call begin on any service before beginning any characteristic
   // Note: refer to custom_hrm
   alert_service.begin();
   
   // prevent man-in-the-middle attacks
-  Bluefruit.Security.setMITM( true );
+  //Bluefruit.Security.setMITM( true );
   // TODO: do I need this?
-  Bluefruit.Security.begin();
+  //Bluefruit.Security.begin();
 
   Bluefruit.Periph.setConnectCallback(connect_callback);
   Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
+
+  // Configure and Start Device Information Service
+  bledis.setManufacturer("Z Industries");
+  bledis.setModel("crazy_mofo");
+  bledis.begin();
 
   Bluefruit.Periph.begin();
 
@@ -181,9 +179,20 @@ void connection_secured_callback(uint16_t conn_handle)
 }
 void loop() 
 {
+  digitalToggle(LED_RED);
+  
   // put your main code here, to run repeatedly:
-  delay( 5000 );
-  Serial.print( "Loop count is: ");
-  Serial.println( loop_count );
-  loop_count++;
+  delay( 1000 );
+  if ( Bluefruit.connected() ) 
+  {
+    if( first_conn == 0 )
+    {
+      Serial.println("BLE connected");
+      first_conn = 1;
+    }
+  }
+  else
+  {
+    Serial.println("BLE NOT connected");
+  }
 }
