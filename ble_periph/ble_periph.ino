@@ -7,6 +7,11 @@
 #include <bluefruit.h>
 #include <utility/bonding.h>
 
+// TODO: can't figure out how to include this directly #include <BLEAdafruitSensor.h>
+
+// https://www.bluetooth.com/specifications/assigned-numbers/
+BLEService alert_service = BLEService(UUID16_SVC_IMMEDIATE_ALERT);
+
 uint8_t loop_count=0;
 
 //BLEUart bleuart; // uart over ble
@@ -35,20 +40,26 @@ void setup()
   Bluefruit.Periph.setConnInterval(9, 16); // min = 9*1.25=11.25 ms, max = 16*1.25=20ms
   Bluefruit.setTxPower(4);    // Check bluefruit.h for supported values
 
+#if 0
   // Configure and Start Device Information Service
   bledis.setManufacturer("Z Industries");
   bledis.setModel("crazy_mofo");
   bledis.begin();
+#endif
 
+  // must call begin on any service before beginning any characteristic
+  // Note: refer to custom_hrm
+  alert_service.begin();
+  
   // prevent man-in-the-middle attacks
-  //Bluefruit.Security.setMITM( true );
+  Bluefruit.Security.setMITM( true );
   // TODO: do I need this?
-  //Bluefruit.Security.begin();
+  Bluefruit.Security.begin();
 
   Bluefruit.Periph.setConnectCallback(connect_callback);
   Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
 
-  //Bluefruit.Periph.begin();
+  Bluefruit.Periph.begin();
 
   // Set connection secured callback, invoked when connection is encrypted
   Bluefruit.Security.setSecuredCallback(connection_secured_callback);
@@ -69,13 +80,17 @@ void startAdv(void)
   Bluefruit.Advertising.addTxPower();
   
   // Include bleuart 128-bit uuid
-  //Bluefruit.Advertising.addService(bleuart);
+  Bluefruit.Advertising.addService(alert_service);
   
   // Include CTS client UUID
   //Bluefruit.Advertising.addService(bleCTime);
 
   // Includes name
   Bluefruit.Advertising.addName();
+
+  // Secondary Scan Response packet (optional)
+  // Since there is no room for 'Name' in Advertising packet
+  Bluefruit.ScanResponse.addName();
   
   /* Start Advertising
    * - Enable auto advertising if disconnected
