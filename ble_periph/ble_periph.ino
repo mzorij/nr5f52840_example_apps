@@ -26,44 +26,56 @@ void setup()
 
   while ( !Serial ) delay(10);   // for nrf52840 with native usb
 
-  Serial.println("Setup complete");
+  Bluefruit.begin();
 
-  Serial.println("Initializing bond");
-  // Note: this creates the bond directories in the file system
   bond_init();
+  bond_print_list(BLE_GAP_ROLE_PERIPH);
+#if 0
+  //Serial.println("Initializing bond");
+  // Note: this creates the bond directories in the file system
+  //bond_init();
   // Note: this throws an assertion if the list is empty it seems
   //Serial.println("Printing current bond list");
-  //bond_print_list(BLE_GAP_ROLE_PERIPH);
+  bond_print_list(BLE_GAP_ROLE_PERIPH);
 
-  Bluefruit.begin();
+  Serial.println("clearing bond list");
+  Bluefruit.Periph.clearBonds();
+  bond_print_list(BLE_GAP_ROLE_PERIPH);
+#endif
+
   // HID Device can have a min connection interval of 9*1.25 = 11.25 ms
   Bluefruit.Periph.setConnInterval(9, 16); // min = 9*1.25=11.25 ms, max = 16*1.25=20ms
   Bluefruit.setTxPower(4);    // Check bluefruit.h for supported values
-
-  // must call begin on any service before beginning any characteristic
-  // Note: refer to custom_hrm
-  alert_service.begin();
-  
+    
   // prevent man-in-the-middle attacks
-  //Bluefruit.Security.setMITM( true );
+  Bluefruit.Security.setMITM( true );
+
+  // Set connection secured callback, invoked when connection is encrypted
+  Bluefruit.Security.setSecuredCallback(connection_secured_callback);
+
+  // set IO capabilities...will be we get a security prompt?
+  Bluefruit.Security.setIOCaps( true /*display*/ , true /*yes_no*/, true/*keyboard*/ );
+
+  Bluefruit.Security.setPairPasskeyCallback( pairPasskeyCb );
+  //Bluefruit.Security.setPairPasskeyRequestCallback( pairPasskeyRequestCb );
+  Bluefruit.Security.setPairCompleteCallback( pairCompleteCb );
+
   // TODO: do I need this?
-  //Bluefruit.Security.begin();
+  Bluefruit.Security.begin();
 
   Bluefruit.Periph.setConnectCallback(connect_callback);
   Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
+  Bluefruit.Periph.begin();
 
+  // Note: this is displayed in the "device information" service
   // Configure and Start Device Information Service
   bledis.setManufacturer("Z Industries");
   bledis.setModel("crazy_mofo");
   bledis.begin();
 
-  Bluefruit.Periph.begin();
-
-  // Set connection secured callback, invoked when connection is encrypted
-  Bluefruit.Security.setSecuredCallback(connection_secured_callback);
-
-  // Configure and Start BLE Uart Service
-  //bleuart.begin();
+  // must call begin on any service before beginning any characteristic
+  // Note: refer to custom_hrm
+  alert_service.begin();
 
   // Set up and start advertising
   startAdv();
@@ -123,15 +135,41 @@ void connect_callback(uint16_t conn_handle)
 
   // saveCccd() - TODO? CCCD: client configuration descriptor 
 
+  // NOTE: this seems to work to request a connection that isn't bonded
   // request Pairing if not bonded
-  if( p_conn->secured() )
+  if( p_conn->bonded() == false/*p_conn->secured()*/ )
   {
-    Serial.println("Attempting to PAIR with the device, please press PAIR on your phone ... ");
+    //Serial.println("Attempting to PAIR with the device, please press PAIR on your phone ... ");
+    //p_conn->requestPairing();
+#if 1
+    // connection must be secured otherwise disconnect it
+    Serial.println("Connect is NOT secure, disconnecting");
+    for( int i=0; i<10; i++ )
+    {
+      delay( 500 );
+      digitalToggle(LED_RED);  
+    }
+    if( p_conn->bonded() == false )
+    {
+      p_conn->disconnect();
+      digitalWrite( LED_RED, 0 );
+    }
+    else
+    {
+      digitalWrite( LED_RED, 1 );
+    }
+#else
     p_conn->requestPairing();
+#endif    
   }
   else
   {
-    Serial.println("Connection already secured");
+    // it's bonded, make sure it's secure
+    if( p_conn->secured() )
+    {
+      Serial.println("Connection already secured");
+      digitalWrite( LED_RED, 1 );
+    }
   }
   /*
   Serial.print("Discovering CTS ... ");
@@ -144,7 +182,6 @@ void connect_callback(uint16_t conn_handle)
     Serial.println("Attempting to PAIR with the iOS device, please press PAIR on your phone ... ");
     conn->requestPairing();
   }*/
-  
 }
 
 /**
@@ -156,6 +193,8 @@ void disconnect_callback(uint16_t conn_handle, uint8_t reason)
 {
   Serial.println();
   Serial.print("Disconnected, reason = 0x"); Serial.println(reason, HEX);
+
+  digitalWrite( LED_RED, 0 );
 }
 
 void connection_secured_callback(uint16_t conn_handle)
@@ -177,9 +216,38 @@ void connection_secured_callback(uint16_t conn_handle)
 
   }
 }
+
+bool pairPasskeyCb(uint16_t conn_hdl, uint8_t const passkey[6], bool match_request)
+{
+  Serial.print("PairPasskeyCb ");  
+  Serial.println( match_request );
+  for( int i=0; i<6; i++ )
+  {
+    Serial.print( passkey[i] );
+  }
+  Serial.println( "cb done");
+  
+  return (true);
+}
+void pairPasskeyRequestCb(uint16_t conn_hdl, uint8_t passkey[6])
+{
+  Serial.println( "pairPasskeyRequestCb" );
+
+  for( int i=0; i<6; i++ )
+  {
+    Serial.print( passkey[i] );
+  }
+}
+
+void pairCompleteCb(uint16_t conn_hdl, uint8_t auth_status)
+{
+  Serial.print("Pair complete");
+  Serial.println(auth_status);
+}
+
 void loop() 
 {
-  digitalToggle(LED_RED);
+  //digitalToggle(LED_RED);
   
   // put your main code here, to run repeatedly:
   delay( 1000 );
@@ -193,6 +261,6 @@ void loop()
   }
   else
   {
-    Serial.println("BLE NOT connected");
+    //Serial.println("BLE NOT connected");
   }
 }
