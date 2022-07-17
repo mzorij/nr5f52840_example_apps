@@ -12,8 +12,6 @@
 // https://www.bluetooth.com/specifications/assigned-numbers/
 BLEService alert_service = BLEService(UUID16_SVC_IMMEDIATE_ALERT);
 
-uint8_t first_conn = 0;
-
 //BLEUart bleuart; // uart over ble
 // TODO: examine BLEAdafruitSensor.h, refer to BLEAdafruitButton
 BLEDis  bledis;  // device information
@@ -30,14 +28,9 @@ void setup()
 
   bond_init();
   bond_print_list(BLE_GAP_ROLE_PERIPH);
-#if 0
-  //Serial.println("Initializing bond");
-  // Note: this creates the bond directories in the file system
-  //bond_init();
-  // Note: this throws an assertion if the list is empty it seems
-  //Serial.println("Printing current bond list");
-  bond_print_list(BLE_GAP_ROLE_PERIPH);
 
+  // TODO: optionally clear out bond list
+#if 0
   Serial.println("clearing bond list");
   Bluefruit.Periph.clearBonds();
   bond_print_list(BLE_GAP_ROLE_PERIPH);
@@ -50,15 +43,8 @@ void setup()
   // prevent man-in-the-middle attacks
   Bluefruit.Security.setMITM( true );
 
-  // Set connection secured callback, invoked when connection is encrypted
-  Bluefruit.Security.setSecuredCallback(connection_secured_callback);
-
   // set IO capabilities...will be we get a security prompt?
   Bluefruit.Security.setIOCaps( true /*display*/ , true /*yes_no*/, true/*keyboard*/ );
-
-  Bluefruit.Security.setPairPasskeyCallback( pairPasskeyCb );
-  //Bluefruit.Security.setPairPasskeyRequestCallback( pairPasskeyRequestCb );
-  Bluefruit.Security.setPairCompleteCallback( pairCompleteCb );
 
   // TODO: do I need this?
   Bluefruit.Security.begin();
@@ -121,36 +107,30 @@ void startAdv(void)
 void connect_callback(uint16_t conn_handle)
 {
   BLEConnection* p_conn = Bluefruit.Connection(conn_handle);
-  char buf[100];
+  bool bonded = false;
   
-  Serial.println("Connected");
-
-  // Display some basic info on the connection
-  Serial.print("role is ");
-  Serial.println( p_conn->getRole() );
-
-  Serial.print("peer name is ");
-  p_conn->getPeerName( buf, 100 );
-  Serial.println( buf );
-
-  // saveCccd() - TODO? CCCD: client configuration descriptor 
-
   // NOTE: this seems to work to request a connection that isn't bonded
   // request Pairing if not bonded
-  if( p_conn->bonded() == false/*p_conn->secured()*/ )
+  if( p_conn->bonded() == false )
   {
-    //Serial.println("Attempting to PAIR with the device, please press PAIR on your phone ... ");
-    //p_conn->requestPairing();
-#if 1
     // connection must be secured otherwise disconnect it
-    Serial.println("Connect is NOT secure, disconnecting");
-    for( int i=0; i<10; i++ )
+    Serial.println("Connect is NOT bonded, waiting for bond");
+    for( int i=0; (i<10) && (bonded==false); i++ )
     {
       delay( 500 );
       digitalToggle(LED_RED);  
+      if( p_conn->bonded() == true )
+      {
+        if( p_conn->secured() )
+        {
+          Serial.println("Connection is bonded and secure");
+          bonded = true;
+        }
+      }
     }
-    if( p_conn->bonded() == false )
+    if( bonded == false )
     {
+      Serial.println("Bond never occurred, disconnecting");
       p_conn->disconnect();
       digitalWrite( LED_RED, 0 );
     }
@@ -158,30 +138,16 @@ void connect_callback(uint16_t conn_handle)
     {
       digitalWrite( LED_RED, 1 );
     }
-#else
-    p_conn->requestPairing();
-#endif    
   }
   else
   {
     // it's bonded, make sure it's secure
     if( p_conn->secured() )
     {
-      Serial.println("Connection already secured");
+      Serial.println("Bonded connection is secured");
       digitalWrite( LED_RED, 1 );
     }
   }
-  /*
-  Serial.print("Discovering CTS ... ");
-  if ( bleCTime.discover(conn_handle) )
-  {
-    Serial.println("Discovered");
-    
-    // Current Time Service requires pairing to work
-    // request Pairing if not bonded
-    Serial.println("Attempting to PAIR with the iOS device, please press PAIR on your phone ... ");
-    conn->requestPairing();
-  }*/
 }
 
 /**
@@ -197,54 +163,6 @@ void disconnect_callback(uint16_t conn_handle, uint8_t reason)
   digitalWrite( LED_RED, 0 );
 }
 
-void connection_secured_callback(uint16_t conn_handle)
-{
-  BLEConnection* p_conn = Bluefruit.Connection(conn_handle);
-
-  if ( !p_conn->secured() )
-  {
-    Serial.println("In secure CB but not yet secured");
-    // It is possible that connection is still not secured by this time.
-    // This happens (central only) when we try to encrypt connection using stored bond keys
-    // but peer reject it (probably it remove its stored key).
-    // Therefore we will request an pairing again --> callback again when encrypted
-    p_conn->requestPairing();
-  }
-  else
-  {
-    Serial.println("Secured");
-
-  }
-}
-
-bool pairPasskeyCb(uint16_t conn_hdl, uint8_t const passkey[6], bool match_request)
-{
-  Serial.print("PairPasskeyCb ");  
-  Serial.println( match_request );
-  for( int i=0; i<6; i++ )
-  {
-    Serial.print( passkey[i] );
-  }
-  Serial.println( "cb done");
-  
-  return (true);
-}
-void pairPasskeyRequestCb(uint16_t conn_hdl, uint8_t passkey[6])
-{
-  Serial.println( "pairPasskeyRequestCb" );
-
-  for( int i=0; i<6; i++ )
-  {
-    Serial.print( passkey[i] );
-  }
-}
-
-void pairCompleteCb(uint16_t conn_hdl, uint8_t auth_status)
-{
-  Serial.print("Pair complete");
-  Serial.println(auth_status);
-}
-
 void loop() 
 {
   //digitalToggle(LED_RED);
@@ -253,14 +171,10 @@ void loop()
   delay( 1000 );
   if ( Bluefruit.connected() ) 
   {
-    if( first_conn == 0 )
-    {
-      Serial.println("BLE connected");
-      first_conn = 1;
-    }
+    Serial.println("BLE connected");
   }
   else
   {
-    //Serial.println("BLE NOT connected");
+    Serial.println("BLE NOT connected");
   }
 }
