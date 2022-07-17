@@ -16,6 +16,8 @@ BLEService alert_service = BLEService(UUID16_SVC_IMMEDIATE_ALERT);
 // TODO: examine BLEAdafruitSensor.h, refer to BLEAdafruitButton
 BLEDis  bledis;  // device information
 
+bool is_connected = false;
+
 void setup() 
 {
   // put your setup code here, to run once:
@@ -169,12 +171,22 @@ void loop()
   
   // put your main code here, to run repeatedly:
   delay( 1000 );
+  Serial.print(".");
+  Serial.flush();
   if ( Bluefruit.connected() ) 
   {
-    Serial.println("BLE connected");
+    if( is_connected == false )
+    {
+      Serial.println("BLE now connected");
+    }
+    is_connected = true;
   }
   else
   {
-    Serial.println("BLE NOT connected");
+    if( is_connected == true )
+    {
+      Serial.println("BLE is no longer connected");
+    }
+    is_connected = false;
   }
 }
